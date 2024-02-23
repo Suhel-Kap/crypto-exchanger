@@ -1,0 +1,14 @@
+version: "3"
+services: 
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_USER: postgres
+      POSTGRES_DB: suhel
+  app:
+    build: .
+    ports:
+      - 3000:3000
+    expose:
+      - 3000
