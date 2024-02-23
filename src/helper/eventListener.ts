@@ -18,24 +18,32 @@ let isProcessing = false
 const eventQueue: ContractEventPayload[] = []
 
 // providers for the two networks
-const optimismProvider = new ethers.AlchemyProvider(
-  10,
-  process.env.OPTIMISM_API_KEY
+// const optimismProvider = new ethers.AlchemyProvider(
+//   10,
+//   process.env.OPTIMISM_API_KEY
+// )
+// const arbitrumProvider = new ethers.AlchemyProvider(
+//   42161,
+//   process.env.ARBITRUM_API_KEY
+// )
+const mumbaiProvider = new ethers.AlchemyProvider(
+  80001,
+  process.env.MUMBAI_API_KEY
 )
-const arbitrumProvider = new ethers.AlchemyProvider(
-  42161,
-  process.env.ARBITRUM_API_KEY
+const optSplProvider = new ethers.AlchemyProvider(
+  11155420,
+  process.env.OPTIMISM_SEPOLLIA_API_KEY
 )
 
 const COINGECKO_URL =
   'https://api.coingecko.com/api/v3/simple/price?ids=arbitrum&vs_currencies=usd&precision=6'
 
 // contracts for USDC and ARB
-const usdc = new ethers.Contract(USDC_ADDRESS, ERC20, optimismProvider)
-const arb = new ethers.Contract(ARB_ADDRESS, ERC20, arbitrumProvider)
+const usdc = new ethers.Contract(USDC_ADDRESS, ERC20, mumbaiProvider)
+const arb = new ethers.Contract(ARB_ADDRESS, ERC20, optSplProvider)
 
 // wallet for sending ARB
-const wallet = new ethers.Wallet(process.env.PVT_KEY ?? '', arbitrumProvider)
+const wallet = new ethers.Wallet(process.env.PVT_KEY ?? '', optSplProvider)
 
 // function to process the event
 async function processEvent (event: ContractEventPayload): Promise<void> {
@@ -62,7 +70,7 @@ async function processEvent (event: ContractEventPayload): Promise<void> {
     // wait for the transaction to be confirmed
     await tx.wait()
     // fetch the transaction receipt
-    const receipt = await arbitrumProvider.getTransactionReceipt(tx.hash)
+    const receipt = await optSplProvider.getTransactionReceipt(tx.hash)
     Logging.info(`${receipt?.hash}, confirmed`)
     // insert the transaction details into the database
     await insertTransaction({

@@ -1,4 +1,8 @@
-import express, { type Request, type Response, type NextFunction } from 'express'
+import express, {
+  type Request,
+  type Response,
+  type NextFunction
+} from 'express'
 import dotenv from 'dotenv'
 import { createTable } from './database'
 import UserRoutes from './routes/Users'
@@ -56,7 +60,7 @@ app.use('/users', UserRoutes)
 app.use('/database', verifyToken, DatabaseRoutes)
 
 /** Health Check */
-app.get('/ping', async (req, res, next) => {
+app.get('/ping', (req, res, next) => {
   return res.status(200).json({ message: 'pong' })
 })
 
