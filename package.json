@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
     "test": "jest -i src/test/*.ts",
     "start": "tsc && nodemon dist/index.js",
@@ -10,13 +11,15 @@
     "watch": "tsc -w",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
-    "format": "prettier --write src/**/*.ts"
+    "format": "prettier --write src/**/*.ts",
+    "testing": "tsc && node dist/helper/test.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@babel/eslint-parser": "^7.23.10",
+    "@cjs-exporter/p-map": "^5.5.0",
     "argon2": "^0.31.2",
     "axios": "^1.6.7",
     "chalk": "^4.1.2",

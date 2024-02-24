@@ -25,7 +25,9 @@ const pool = new Pool({
 const getClient = async (): Promise<PoolClient> => {
   Logging.info('Attempting to connect to the database...')
   try {
-    return await pool.connect()
+    const client = await pool.connect()
+    Logging.info('Connected to the database')
+    return client
   } catch (e) {
     Logging.error(e)
     Logging.warn('Retrying to connect to the database...')
@@ -74,6 +76,7 @@ export const createTable = async (): Promise<void> => {
         arb_amount NUMERIC NOT NULL,
         arb_price DECIMAL NOT NULL,
         fee NUMERIC NOT NULL,
+        block_number NUMERIC NOT NULL,
         incoming_transaction_hash VARCHAR(66) NOT NULL UNIQUE,
         outgoing_transaction_hash VARCHAR(66) NOT NULL UNIQUE,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -117,6 +120,7 @@ export const insertTransaction = async ({
   arbAmount,
   arbPrice,
   fee,
+  blockNumber,
   incomingTransactionHash,
   outgoingTransactionHash
 }: Transaction): Promise<void> => {
@@ -127,6 +131,7 @@ export const insertTransaction = async ({
     arbAmount,
     arbPrice,
     fee,
+    blockNumber,
     incomingTransactionHash,
     outgoingTransactionHash
   })
@@ -138,8 +143,8 @@ export const insertTransaction = async ({
   try {
     await client.query('BEGIN')
     const query = SQL`
-      INSERT INTO transactions (sender, usdc_received, arb_amount, arb_price, fee, incoming_transaction_hash, outgoing_transaction_hash)
-      VALUES (${sender.toLowerCase()}, ${usdcReceived}, ${arbAmount}, ${arbPrice}, ${fee}, ${incomingTransactionHash.toLowerCase()}, ${outgoingTransactionHash.toLowerCase()})
+      INSERT INTO transactions (sender, usdc_received, arb_amount, arb_price, fee, block_number, incoming_transaction_hash, outgoing_transaction_hash)
+      VALUES (${sender.toLowerCase()}, ${usdcReceived}, ${arbAmount}, ${arbPrice}, ${fee}, ${blockNumber}, ${incomingTransactionHash.toLowerCase()}, ${outgoingTransactionHash.toLowerCase()})
     `
     await client.query(query)
     await client.query('COMMIT')
@@ -179,7 +184,7 @@ export const insertUser = async ({
 export const fetchUser = async (
   username: string,
   _password: string
-): Promise<boolean | { id: string, valid: boolean } > => {
+): Promise<boolean | { id: string; valid: boolean }> => {
   const client = await pool.connect()
   try {
     // Fetch the user from the database
@@ -205,10 +210,29 @@ export const fetchUser = async (
   }
 }
 
+// Function to fetch the latest block number from the table
+export const fetchLatestBlockNumber = async (): Promise<number> => {
+  const client = await pool.connect()
+  try {
+    // this query would sort the transactions by block number in descending order and return the block number of the first row
+    const query = SQL`
+      SELECT block_number FROM transactions
+      ORDER BY block_number DESC
+      LIMIT 1
+    `
+    const result = await client.query(query)
+    // If there are no transactions, return 0
+    if (result.rows.length === 0) {
+      return 0
+    }
+    return result.rows[0].block_number
+  } finally {
+    client.release()
+  }
+}
+
 // Function to return all the transactions from the table
-export const fetchTransactions = async (): Promise<
-Transaction[]
-> => {
+export const fetchTransactions = async (): Promise<Transaction[]> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -222,9 +246,7 @@ Transaction[]
 }
 
 // Function to return the top 5 transactions by USDC received
-export const fetchTop5Transactions = async (): Promise<
-Transaction[]
-> => {
+export const fetchTop5Transactions = async (): Promise<Transaction[]> => {
   const client = await pool.connect()
   try {
     // arrange the transactions in descending order of USDC received and return the top 5
@@ -243,7 +265,7 @@ Transaction[]
 // Function to return the top 5 transactions by sender
 export const fetchTop5TransactionsBySender = async (
   sender: string
-): Promise<Transaction[] > => {
+): Promise<Transaction[]> => {
   const client = await pool.connect()
   try {
     // arrange the transactions of a particular user in descending order of USDC received and return the top 5
@@ -261,9 +283,7 @@ export const fetchTop5TransactionsBySender = async (
 }
 
 // Function to return the lowest USDC received transactions
-export const fetchLowestUsdcTransactions = async (): Promise<
-Transaction[]
-> => {
+export const fetchLowestUsdcTransactions = async (): Promise<Transaction[]> => {
   const client = await pool.connect()
   try {
     // first find the minimum USDC received and then return the transactions with that USDC received
@@ -279,9 +299,7 @@ Transaction[]
 }
 
 // Function to return the highest ARB token price
-export const fetchHighestArbTokenPrice = async (): Promise<
-Transaction[]
-> => {
+export const fetchHighestArbTokenPrice = async (): Promise<Transaction[]> => {
   const client = await pool.connect()
   try {
     // return the highest ARB token price
@@ -298,7 +316,7 @@ Transaction[]
 // fetch transactions by sender
 export const fetchTransactionsBySender = async (
   sender: string
-): Promise<Transaction[] > => {
+): Promise<Transaction[]> => {
   const client = await pool.connect()
   try {
     // return all the transactions of a particular user
@@ -316,7 +334,7 @@ export const fetchTransactionsBySender = async (
 // fetch transaction by outgoing hash
 export const fetchTransactionByOutgoingHash = async (
   outgoingHash: string
-): Promise<Transaction[] > => {
+): Promise<Transaction[]> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -333,7 +351,7 @@ export const fetchTransactionByOutgoingHash = async (
 // fetch transaction by incoming hash
 export const fetchTransactionByIncomingHash = async (
   incomingHash: string
-): Promise<Transaction[] > => {
+): Promise<Transaction[]> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -350,7 +368,7 @@ export const fetchTransactionByIncomingHash = async (
 // fetch transactions by USDC threshold, i.e. return all the transactions with USDC received greater than a certain threshold
 export const fetchTransactionsByUsdcThreshold = async (
   threshold: number
-): Promise<Transaction[] > => {
+): Promise<Transaction[]> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -368,7 +386,7 @@ export const fetchTransactionsByUsdcThreshold = async (
 export const fetchTransactionsByDateRange = async (
   startDate: Date,
   endDate: Date
-): Promise<Transaction[] > => {
+): Promise<Transaction[]> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -386,26 +404,25 @@ export const fetchTransactionsByDateRange = async (
 export const fetchTotalUsdcAndArbBySender = async (
   sender: string
 ): Promise<
-| Array<{
-  sender: string
-  total_usdc_received: number
-  total_arb_sent: number
-}>
-
+  Array<{
+    sender: string
+    total_usdc_received: number
+    total_arb_sent: number
+  }>
 > => {
   const client = await pool.connect()
   try {
     // first filter the transactions by sender and then return the total USDC received and ARB sent
     const query = SQL`
-      SELECT 
+      SELECT
           sender,
           SUM(usdc_received) AS total_usdc_received,
           SUM(arb_amount) AS total_arb_sent
-      FROM 
+      FROM
           transactions
-      WHERE 
+      WHERE
           sender = ${sender.toLowerCase()}
-      GROUP BY 
+      GROUP BY
           sender;
     `
     const result = await client.query(query)
@@ -416,9 +433,7 @@ export const fetchTotalUsdcAndArbBySender = async (
 }
 
 // fetch total transactions count
-export const fetchTotalTransactionsCount = async (): Promise<
-number
-> => {
+export const fetchTotalTransactionsCount = async (): Promise<number> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -434,7 +449,7 @@ number
 // fetch total transactions count by user
 export const fetchTotalTransactionsCountByUser = async (
   sender: string
-): Promise<number > => {
+): Promise<number> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -448,7 +463,7 @@ export const fetchTotalTransactionsCountByUser = async (
 }
 
 // fetch total fee collected in USDC
-export const fetchTotalFeeCollected = async (): Promise<string > => {
+export const fetchTotalFeeCollected = async (): Promise<string> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -467,7 +482,7 @@ export const fetchTotalFeeCollected = async (): Promise<string > => {
 // fetch total fee collected by user
 export const fetchTotalFeeCollectedByUser = async (
   sender: string
-): Promise<string > => {
+): Promise<string> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -489,7 +504,7 @@ export const fetchTotalFeeCollectedByUser = async (
 // fetch total fee collected on a particular date
 export const fetchTotalFeeCollectedOnDate = async (
   date: Date
-): Promise<string > => {
+): Promise<string> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -510,7 +525,7 @@ export const fetchTotalFeeCollectedOnDate = async (
 export const fetchTotalFeeCollectedByUserOnDate = async (
   sender: string,
   date: Date
-): Promise<string > => {
+): Promise<string> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -528,7 +543,7 @@ export const fetchTotalFeeCollectedByUserOnDate = async (
 }
 
 // fetch average ARB price in USD
-export const fetchAverageArbPrice = async (): Promise<number > => {
+export const fetchAverageArbPrice = async (): Promise<number> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -543,9 +558,7 @@ export const fetchAverageArbPrice = async (): Promise<number > => {
 }
 
 // fetch average fee collected
-export const fetchAverageFeeCollected = async (): Promise<
-string
-> => {
+export const fetchAverageFeeCollected = async (): Promise<string> => {
   const client = await pool.connect()
   try {
     const query = SQL`
@@ -564,9 +577,7 @@ string
 
 export const fetchTopSendersByTotalUsdcReceived = async (
   limit: number
-): Promise<
-Array<{ sender: string, total_usdc_received: number }>
-> => {
+): Promise<Array<{ sender: string; total_usdc_received: number }>> => {
   const client = await pool.connect()
   try {
     const query = SQL`

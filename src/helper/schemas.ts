@@ -1,3 +1,4 @@
+import { type Log } from 'ethers'
 import { z } from 'zod'
 
 // Define the schema for the user
@@ -25,9 +26,16 @@ export const TransactionSchema = z.object({
   arbAmount: z.bigint(),
   arbPrice: z.number(),
   fee: z.bigint(),
+  blockNumber: z.number(),
   incomingTransactionHash: z.string().length(66),
   outgoingTransactionHash: z.string().length(66)
 })
 
 // Define the typescript type for the transaction
 export type Transaction = z.infer<typeof TransactionSchema>
+
+// Type interface for the object stored in the eventQueue
+export interface Event {
+  log: Log
+  blockNumber?: number
+}

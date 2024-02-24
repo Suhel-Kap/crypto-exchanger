@@ -1,12 +1,19 @@
-import { ContractEventPayload, ethers } from 'ethers'
-import type { ContractEventName } from 'ethers'
+import { ContractEventPayload, type ContractEventName } from 'ethers'
 import 'dotenv/config'
-import ERC20 from './abi/ERC20.abi.json'
-import axios from 'axios'
 import calculateAmount from './calculateAmount'
 import { insertTransaction } from '../database'
 import Logging from '../library/Logging'
-import { ARB_ADDRESS, LISTENER_ADDRESS, USDC_ADDRESS } from './addresses'
+import {
+  ARB_ADDRESS,
+  LISTENER_ADDRESS,
+  ARB_CONTRACT,
+  USDC_CONTRACT,
+  WALLET,
+  USDC_INTERFACE
+} from './constants'
+import getArbPrice from './arbPrice'
+import { type Event } from './schemas'
+import { fetchLostTransactions } from './fetchLostTransactions'
 
 // mutex lock to prevent concurrent transaction processing
 // if lock is not present, multiple send transactions would be initiated
@@ -15,70 +22,47 @@ let isProcessing = false
 
 // queue to store incoming events
 // if we encounter any valid event, we first add it to the queue and then process it
-const eventQueue: ContractEventPayload[] = []
-
-// providers for the two networks
-// const optimismProvider = new ethers.AlchemyProvider(
-//   10,
-//   process.env.OPTIMISM_API_KEY
-// )
-// const arbitrumProvider = new ethers.AlchemyProvider(
-//   42161,
-//   process.env.ARBITRUM_API_KEY
-// )
-const mumbaiProvider = new ethers.AlchemyProvider(
-  80001,
-  process.env.MUMBAI_API_KEY
-)
-const optSplProvider = new ethers.AlchemyProvider(
-  11155420,
-  process.env.OPTIMISM_SEPOLLIA_API_KEY
-)
-
-const COINGECKO_URL =
-  'https://api.coingecko.com/api/v3/simple/price?ids=arbitrum&vs_currencies=usd&precision=6'
-
-// contracts for USDC and ARB
-const usdc = new ethers.Contract(USDC_ADDRESS, ERC20, mumbaiProvider)
-const arb = new ethers.Contract(ARB_ADDRESS, ERC20, optSplProvider)
-
-// wallet for sending ARB
-const wallet = new ethers.Wallet(process.env.PVT_KEY ?? '', optSplProvider)
+const eventQueue: Event[] = []
 
 // function to process the event
-async function processEvent (event: ContractEventPayload): Promise<void> {
+async function processEvent(event: Event): Promise<void> {
   try {
+    const parsedLog = USDC_INTERFACE.parseLog(event.log)
     // extracts the sender and the amount received from the event
-    const sender = event.args[0]
-    const amountReceived = BigInt(event.args[2] as number)
+    const sender = parsedLog?.args[0] as string
+    const amountReceived = parsedLog?.args[2] as bigint
 
     // fetches current price of ARB on coingecko upto 6 decimal places
-    const arbPrice = await axios.get(COINGECKO_URL)
+    let arbPrice
+    if (event.blockNumber !== undefined) {
+      arbPrice = await getArbPrice(event.blockNumber)
+    } else {
+      arbPrice = await getArbPrice()
+    }
 
     // calculates the equivalent amount of ARB to send to the sender
-    const { arbAmount, fee } = calculateAmount(
-      amountReceived,
-      arbPrice.data.arbitrum.usd as number
-    )
+    const { arbAmount, fee } = calculateAmount(amountReceived, arbPrice)
 
     // send the equivalent amount of ARB to the sender
-    const tx = await wallet.sendTransaction({
+    const tx = await WALLET.sendTransaction({
       to: ARB_ADDRESS,
       value: BigInt(0),
-      data: arb.interface.encodeFunctionData('transfer', [sender, arbAmount])
+      data: ARB_CONTRACT.interface.encodeFunctionData('transfer', [
+        sender,
+        arbAmount
+      ])
     })
     // wait for the transaction to be confirmed
-    await tx.wait()
-    // fetch the transaction receipt
-    const receipt = await optSplProvider.getTransactionReceipt(tx.hash)
+    const receipt = await tx.wait()
     Logging.info(`${receipt?.hash}, confirmed`)
     // insert the transaction details into the database
     await insertTransaction({
       sender,
       usdcReceived: amountReceived,
       arbAmount,
-      arbPrice: arbPrice.data.arbitrum.usd,
+      arbPrice,
       fee,
+      blockNumber: event.log.blockNumber,
       incomingTransactionHash: event.log.transactionHash,
       outgoingTransactionHash: receipt?.hash ?? ''
     })
@@ -86,47 +70,61 @@ async function processEvent (event: ContractEventPayload): Promise<void> {
   } catch (error) {
     Logging.error(error)
   } finally {
-    // after processing the event, release the mutex lock
-    isProcessing = false
     // process the next event in the queue if any
     if (eventQueue.length > 0) {
-      // acquire the mutex lock
-      isProcessing = true
       // extract the first event from the queue
       const nextEvent = eventQueue.shift()
-      // if the event is valid, process it, else release the lock
-      nextEvent !== undefined
-        ? await processEvent(nextEvent)
-        : (isProcessing = false)
+      // if the event is valid, process it
+      nextEvent !== undefined && (await processEvent(nextEvent))
     }
   }
 }
 
 // listening to only Transfer events returns the receiver address only
 // so we listen to all events and filter out the Transfer events
-usdc
-  // eslint-disable-next-line @typescript-eslint/no-misused-promises
-  .on('*', async (event: ContractEventName) => {
-    // here we check if the event is a Transfer event and the receiver is the listener address
-    if (
-      event instanceof ContractEventPayload &&
-      event.fragment.name === 'Transfer' &&
-      event.args[1] === LISTENER_ADDRESS
-    ) {
-      // if the event is valid, add it to the queue
-      eventQueue.push(event)
-      Logging.warn('Event added to the queue')
-      // If not processing any event, start processing
-      if (!isProcessing) {
-        // before processing the event, acquire the mutex lock
-        isProcessing = true
-        // extract the first event from the queue
-        const nextEvent = eventQueue.shift()
-        // if the event is valid, process it, else release the lock
-        nextEvent !== undefined
-          ? await processEvent(nextEvent)
-          : (isProcessing = false)
+export const listenToAllEvents = (): void => {
+  USDC_CONTRACT
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises
+    .on('*', async (event: ContractEventName) => {
+      // here we check if the event is a Transfer event and the receiver is the listener address
+      if (
+        event instanceof ContractEventPayload &&
+        event.fragment.name === 'Transfer' &&
+        event.args[1] === LISTENER_ADDRESS
+      ) {
+        // if the event is valid, add it to the queue
+        eventQueue.push({ log: event.log })
+        Logging.warn('Event added to the queue')
+        // If not processing any event, start processing
+        if (!isProcessing) {
+          // before processing the event, acquire the mutex lock
+          isProcessing = true
+          // extract the first event from the queue
+          const nextEvent = eventQueue.shift()
+          // if the event is valid, process it, else release the lock
+          nextEvent !== undefined && (await processEvent(nextEvent))
+          isProcessing = false
+        }
       }
+    })
+    .catch(Logging.error)
+}
+
+export const processPendingEvents = async (): Promise<void> => {
+  try {
+    const txns = await fetchLostTransactions()
+    Logging.warn(`Fetched ${txns?.length} lost transactions`)
+    if (txns === undefined) return
+    for (const txn of txns) {
+      eventQueue.push(txn)
     }
-  })
-  .catch(Logging.error)
+    if (!isProcessing) {
+      isProcessing = true
+      const nextEvent = eventQueue.shift()
+      nextEvent !== undefined && (await processEvent(nextEvent))
+      isProcessing = false
+    }
+  } catch (error) {
+    Logging.error(error)
+  }
+}
