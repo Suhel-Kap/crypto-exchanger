@@ -1,7 +1,12 @@
 import { ContractEventPayload, type ContractEventName } from 'ethers'
 import 'dotenv/config'
 import calculateAmount from './calculateAmount'
-import { insertTransaction } from '../database'
+import {
+  deleteFailedTransaction,
+  fetchFailedTransactions,
+  insertFailedTransaction,
+  insertTransaction
+} from '../database'
 import Logging from '../library/Logging'
 import {
   ARB_ADDRESS,
@@ -67,8 +72,14 @@ async function processEvent(event: Event): Promise<void> {
       outgoingTransactionHash: receipt?.hash ?? ''
     })
     Logging.info('Data inserted into the database')
-  } catch (error) {
+  } catch (error: any) {
     Logging.error(error)
+    event.blockNumber = event.log.blockNumber
+    // if the event processing fails, we store the event in the database along with the error message
+    await insertFailedTransaction(
+      JSON.stringify(event),
+      error.message as string
+    )
   } finally {
     // process the next event in the queue if any
     if (eventQueue.length > 0) {
@@ -110,14 +121,39 @@ export const listenToAllEvents = (): void => {
     .catch(Logging.error)
 }
 
+// function to process the pending events which were lost due to server downtime
 export const processPendingEvents = async (): Promise<void> => {
   try {
     const txns = await fetchLostTransactions()
     Logging.warn(`Fetched ${txns?.length} lost transactions`)
     if (txns === undefined) return
+    // add the lost transactions to the queue
     for (const txn of txns) {
       eventQueue.push(txn)
     }
+    if (!isProcessing) {
+      isProcessing = true
+      const nextEvent = eventQueue.shift()
+      nextEvent !== undefined && (await processEvent(nextEvent))
+      isProcessing = false
+    }
+  } catch (error) {
+    Logging.error(error)
+  }
+}
+
+// function to process the failed transactions which were not processed due to some error like coingecko, rpc error etc
+export const processFailedTransactions = async (): Promise<void> => {
+  try {
+    const failedTxns = await fetchFailedTransactions()
+    Logging.warn(`Fetched ${failedTxns?.length} failed transactions`)
+    if (failedTxns === undefined || failedTxns.length === 0) return
+    // add the failed transactions to the queue
+    for (const txn of failedTxns) {
+      eventQueue.push(JSON.parse(txn.log) as Event)
+    }
+    // now since we have added the failed transactions to the queue, we can delete them from the database
+    await deleteFailedTransaction()
     if (!isProcessing) {
       isProcessing = true
       const nextEvent = eventQueue.shift()

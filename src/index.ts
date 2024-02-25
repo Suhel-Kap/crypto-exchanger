@@ -9,9 +9,14 @@ import UserRoutes from './routes/Users'
 import DatabaseRoutes from './routes/Database'
 import Logging from './library/Logging'
 import verifyToken from './middlewares/verifyToken'
+import cron from 'node-cron'
 
 // Import the event listener to listen to the USDC contract on Optimism
-import { listenToAllEvents, processPendingEvents } from './helper/eventListener'
+import {
+  listenToAllEvents,
+  processFailedTransactions,
+  processPendingEvents
+} from './helper/eventListener'
 
 // Load environment variables
 dotenv.config()
@@ -66,6 +71,12 @@ const startServer = (): void => {
   processPendingEvents().catch(Logging.error)
   // Listen to the USDC contract on Optimism
   listenToAllEvents()
+
+  // Setup cron job to run every 2 minutes to process failed transactions
+  cron.schedule('*/2 * * * *', () => {
+    processFailedTransactions().catch(Logging.error)
+    Logging.warn('Running cron job to process failed transactions')
+  })
 
   app.listen(port, () => {
     console.log(`Server is running on port ${port}`)

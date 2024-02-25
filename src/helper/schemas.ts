@@ -39,3 +39,10 @@ export interface Event {
   log: Log
   blockNumber?: number
 }
+
+export interface FailedTransaction {
+  id: number
+  log: string
+  error: string
+  timestamp: string
+}

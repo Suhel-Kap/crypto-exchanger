@@ -5,7 +5,8 @@ import Logging from './library/Logging'
 import {
   type Transaction,
   TransactionSchema,
-  type User
+  type User,
+  FailedTransaction
 } from './helper/schemas'
 import { type BigNumberish, ethers } from 'ethers'
 import 'dotenv/config'
@@ -99,8 +100,31 @@ export const createTable = async (): Promise<void> => {
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     `
+
+    // Create the failed_transactions table if it doesn't exist
+    // All transactions that fail to process due to any reason, like:
+    // - RPC Call failure
+    // - Transaction Revert
+    // - Coingecko API failure
+    // Will be stored in this table
+    /**
+     * The failed transactions table will store the following data:
+     * - id: A unique identifier for the failed txn
+     * - log: The log of the failed transaction that needs to be retried
+     * - error: The error message of the failed transaction
+     * - timestamp: The timestamp of the user creation
+     */
+    const failedTransactionTableCreationQuery = SQL`
+      CREATE TABLE IF NOT EXISTS failed_transactions (
+        id SERIAL PRIMARY KEY,
+        log TEXT NOT NULL,
+        error TEXT NOT NULL,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    `
     await client.query(transactionTableCreationQuery)
     await client.query(userTableCreationQuery)
+    await client.query(failedTransactionTableCreationQuery)
     // Commit the transaction
     await client.query('COMMIT')
   } catch (e) {
@@ -180,6 +204,28 @@ export const insertUser = async ({
   }
 }
 
+// Function to insert failed transaction into the table
+export const insertFailedTransaction = async (
+  log: string,
+  error: string
+): Promise<void> => {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const query = SQL`
+      INSERT INTO failed_transactions (log, error)
+      VALUES (${log}, ${error})
+  `
+    await client.query(query)
+    await client.query('COMMIT')
+  } catch (e) {
+    await client.query('ROLLBACK')
+    throw e
+  } finally {
+    client.release()
+  }
+}
+
 // Function to fetch user from the table
 export const fetchUser = async (
   username: string,
@@ -226,6 +272,35 @@ export const fetchLatestBlockNumber = async (): Promise<number> => {
       return 0
     }
     return result.rows[0].block_number
+  } finally {
+    client.release()
+  }
+}
+
+// Function to fetch all failed transactions from the table
+export const fetchFailedTransactions = async (): Promise<
+  FailedTransaction[]
+> => {
+  const client = await pool.connect()
+  try {
+    const query = SQL`
+      SELECT * FROM failed_transactions
+    `
+    const result = await client.query(query)
+    return result.rows
+  } finally {
+    client.release()
+  }
+}
+
+// Function to delete all failed transactions from the table
+export const deleteFailedTransaction = async (): Promise<void> => {
+  const client = await pool.connect()
+  try {
+    const query = SQL`
+      DELETE FROM failed_transactions
+    `
+    await client.query(query)
   } finally {
     client.release()
   }

@@ -1,6 +1,6 @@
 import calculateOnePercent from '../helper/calculateOnePercent'
 
-function generateTestData(
+function generateTestData (
   start: number,
   end: number,
   step: number
