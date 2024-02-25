@@ -1,6 +1,12 @@
 import { type Log, ethers } from 'ethers'
 import Logging from '../library/Logging'
-import { GENESIS, MUMBAI_PROVIDER, USDC_ADDRESS } from './constants'
+import {
+  GENESIS,
+  LISTENER_ADDRESS,
+  LISTENER_ADDRESS_TOPIC,
+  OPTIMISM_PROVIDER,
+  USDC_ADDRESS
+} from './constants'
 import {
   fetchLatestBlockNumber,
   fetchTransactionByIncomingHash
@@ -16,13 +22,17 @@ export const fetchLostTransactions = async (): Promise<Event[] | undefined> => {
     let lastFetchedBlock = await fetchLatestBlockNumber()
     if (lastFetchedBlock === 0) lastFetchedBlock = GENESIS // Set the genesis block as the default value
     Logging.warn(`Fetching logs from block ${lastFetchedBlock}`)
-    const blockNumber = await MUMBAI_PROVIDER.getBlockNumber()
-    const logs = await MUMBAI_PROVIDER.getLogs({
+    const blockNumber = await OPTIMISM_PROVIDER.getBlockNumber()
+    const logs = await OPTIMISM_PROVIDER.getLogs({
       // Fetch logs from the USDC contract
       address: USDC_ADDRESS,
       fromBlock: BigInt(lastFetchedBlock),
       toBlock: blockNumber,
-      topics: [ethers.id('Transfer(address,address,uint256)')] // Filter logs by the Transfer event
+      topics: [
+        ethers.id('Transfer(address,address,uint256)'), // Filter logs by the Transfer event
+        null, // Sender can be any address
+        LISTENER_ADDRESS_TOPIC // Receiver address is the listener address
+      ]
     })
     Logging.warn(`Fetched ${logs.length} logs`)
     if (logs.length > 0) {
@@ -37,8 +47,8 @@ export const fetchLostTransactions = async (): Promise<Event[] | undefined> => {
             log.transactionHash
           )
 
+          // If the transaction doesn't exist, we proceed
           if (exists.length === 0) {
-            // If the transaction doesn't exist, we proceed
             return {
               log,
               blockNumber: log.blockNumber
@@ -47,7 +57,7 @@ export const fetchLostTransactions = async (): Promise<Event[] | undefined> => {
 
           return null // Return null for skipped transactions
         },
-        { concurrency: 3 } // Set the concurrency to 3 to avoid rate limiting from Alchemy Provider
+        { concurrency: 3 }
       )
 
       finalTransactions.push(

@@ -10,8 +10,6 @@ import DatabaseRoutes from './routes/Database'
 import Logging from './library/Logging'
 import verifyToken from './middlewares/verifyToken'
 import cron from 'node-cron'
-
-// Import the event listener to listen to the USDC contract on Optimism
 import {
   listenToAllEvents,
   processFailedTransactions,
@@ -21,6 +19,7 @@ import {
 // Load environment variables
 dotenv.config()
 
+// This function starts the server, it is called after the database is connected
 const startServer = (): void => {
   // Create express app
   const app = express()

@@ -30,7 +30,7 @@ let isProcessing = false
 const eventQueue: Event[] = []
 
 // function to process the event
-async function processEvent(event: Event): Promise<void> {
+async function processEvent (event: Event): Promise<void> {
   try {
     const parsedLog = USDC_INTERFACE.parseLog(event.log)
     // extracts the sender and the amount received from the event
@@ -76,10 +76,10 @@ async function processEvent(event: Event): Promise<void> {
     Logging.error(error)
     event.blockNumber = event.log.blockNumber
     // if the event processing fails, we store the event in the database along with the error message
-    await insertFailedTransaction(
+    insertFailedTransaction(
       JSON.stringify(event),
       error.message as string
-    )
+    ).catch(Logging.error)
   } finally {
     // process the next event in the queue if any
     if (eventQueue.length > 0) {

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { COINGECKO_URL, MUMBAI_PROVIDER } from './constants'
+import { COINGECKO_URL, OPTIMISM_PROVIDER } from './constants'
 import Logging from '../library/Logging'
 
 /*
@@ -33,7 +33,7 @@ const getArbPrice = async (blockNumber?: number): Promise<number> => {
       // If block number is provided, fetch the price at that point in time
     } else if (blockNumber !== undefined) {
       // Fetch the block details
-      const block = await MUMBAI_PROVIDER.getBlock(blockNumber)
+      const block = await OPTIMISM_PROVIDER.getBlock(blockNumber)
       if (block !== null) {
         const blockTimestamp = block.timestamp
         const currentTime = Math.floor(Date.now() / 1000) // Current time in seconds

@@ -4,6 +4,12 @@
 
 >Create a stripped down version of SideShift where users can exchange their USDC on the Optimism network for ARB tokens on the Arbitrum network. Your program will look for incoming USDC transactions to an address on Optimism, calculate the value of the deposit in ARB tokens (based on real-time exchange rates), and send the ARB tokens to the user on the Arbitrum network.
 
+---
+
+## Video walkthrough
+
+[Click here to view the video walkthrough](https://www.loom.com/share/e5040e34c75a44f29bc672695c62af09)
+
 ## How To Get Started:
 
 There are two ways to get this project up and running:
