@@ -1,14 +1,10 @@
-# Sideshift AI Task - By Suhel
+# Crypto Exchanger
 
-## Task
+## What we aim to achieve here?
 
->Create a stripped down version of SideShift where users can exchange their USDC on the Optimism network for ARB tokens on the Arbitrum network. Your program will look for incoming USDC transactions to an address on Optimism, calculate the value of the deposit in ARB tokens (based on real-time exchange rates), and send the ARB tokens to the user on the Arbitrum network.
+>Create a platform where users can exchange their USDC on the Optimism network for ARB tokens on the Arbitrum network. Our program will look for incoming USDC transactions to an address on Optimism, calculate the value of the deposit in ARB tokens (based on real-time exchange rates), and send the ARB tokens to the user on the Arbitrum network.
 
 ---
-
-## Video walkthrough
-
-[Click here to view the video walkthrough](https://www.loom.com/share/e5040e34c75a44f29bc672695c62af09)
 
 ## How To Get Started:
 
@@ -32,18 +28,15 @@ There are two ways to get this project up and running:
 
     To get started with this method, make sure you have postgresql up and running on port 5432
 
-    a. Head over to the `.env` file and uncomment the following lines
+    a. Head over to the `.env` file and add the following lines
     ```json
-        # uncomment the below, if using locally
-        # PGUSER=suhel
-        # PGPASSWORD=8247
-        # PGDB=suhel
+        # PGUSER=<your-user-name>
+        # PGPASSWORD=<your-db-password>
+        # PGDB=<your-db-name>
         # PGHOST=localhost
     ```
 
     Make sure to replace the variables with what you have setup locally
-
-    Also make sure to comment `PGHOST=db`, that works only on Docker containers.
 
     b. Install all the dependencies using
     ```bash
